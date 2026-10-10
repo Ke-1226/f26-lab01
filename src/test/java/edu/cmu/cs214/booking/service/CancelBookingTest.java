@@ -45,4 +45,19 @@ class CancelBookingTest {
 
         assertEquals(1, svc.listBookings(roomA).size());
     }
+
+    @Test
+    void cancelPromotesWaiterToConfirmedBooking() {
+        BookingService svc = newService();
+        BookingResult.Confirmed first =
+                (BookingResult.Confirmed) svc.book(roomA, alice, at(600, 660));
+        svc.book(roomA, bob, at(630, 700));
+
+        svc.cancelBooking(first.booking().id());
+
+        var remaining = svc.listBookings(roomA);
+        assertEquals(1, remaining.size());
+        assertEquals(bob, remaining.get(0).user());
+        assertEquals(at(630, 700), remaining.get(0).interval());
+    }
 }
