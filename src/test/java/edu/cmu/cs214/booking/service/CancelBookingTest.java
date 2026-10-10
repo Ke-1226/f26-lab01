@@ -16,6 +16,7 @@ class CancelBookingTest {
     private final User alice = new User("u1", "Alice");
     private final User bob = new User("u2", "Bob");
     private final User carol = new User("u3", "Carol");
+    private final User dave = new User("u4", "Dave");
 
     private BookingService newService() {
         return new BookingService(new InMemoryBookingStore());
@@ -59,5 +60,53 @@ class CancelBookingTest {
         assertEquals(1, remaining.size());
         assertEquals(bob, remaining.get(0).user());
         assertEquals(at(630, 700), remaining.get(0).interval());
+    }
+
+    @Test
+    void cancelPromotesAtMostOneWaiter() {
+        BookingService svc = newService();
+        BookingResult.Confirmed first =
+                (BookingResult.Confirmed) svc.book(roomA, alice, at(600, 720));
+        svc.book(roomA, bob, at(600, 660));
+        svc.book(roomA, carol, at(660, 700));
+
+        svc.cancelBooking(first.booking().id());
+
+        var remaining = svc.listBookings(roomA);
+        assertEquals(1, remaining.size());
+        assertEquals(bob, remaining.get(0).user());
+    }
+
+    @Test
+    void cancelSkipsConflictingWaiterAndPromotesNextFit() {
+        BookingService svc = newService();
+        BookingResult.Confirmed first =
+                (BookingResult.Confirmed) svc.book(roomA, alice, at(600, 660));
+        svc.book(roomA, carol, at(700, 760));
+        // Bob waits first but his slot still conflicts with Carol after Alice is gone.
+        svc.book(roomA, bob, at(630, 730));
+        // Dave waits second and fits once Alice is gone.
+        svc.book(roomA, dave, at(610, 650));
+
+        svc.cancelBooking(first.booking().id());
+
+        var remaining = svc.listBookings(roomA);
+        assertEquals(2, remaining.size());
+        assertTrue(remaining.stream().anyMatch(b -> b.user().equals(carol)));
+        assertTrue(remaining.stream().anyMatch(b -> b.user().equals(dave)));
+    }
+
+    @Test
+    void cancelDoesNotPromoteWaiterFromAnotherRoom() {
+        BookingService svc = newService();
+        BookingResult.Confirmed first =
+                (BookingResult.Confirmed) svc.book(roomA, alice, at(600, 660));
+        svc.book(roomB, bob, at(600, 660));
+        svc.book(roomB, carol, at(630, 700)); // waitlisted on room B
+
+        svc.cancelBooking(first.booking().id());
+
+        assertTrue(svc.listBookings(roomA).isEmpty());
+        assertEquals(1, svc.listBookings(roomB).size());
     }
 }
